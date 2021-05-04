@@ -45,6 +45,7 @@ use std::sync::Arc;
 use crate::address::{Address, AddressValue};
 use crate::bytes::{AtomicAccess, Bytes};
 use crate::volatile_memory;
+use crate::remote_mem;
 
 static MAX_ACCESS_CHUNK: usize = 4096;
 
@@ -62,6 +63,8 @@ pub enum Error {
     InvalidBackendAddress,
     /// Host virtual address not available.
     HostAddressNotAvailable,
+    /// was weiss ich
+    RemoteMemError(remote_mem::Error),
 }
 
 impl From<volatile_memory::Error> for Error {
@@ -106,6 +109,7 @@ impl Display for Error {
             ),
             Error::InvalidBackendAddress => write!(f, "invalid backend address"),
             Error::HostAddressNotAvailable => write!(f, "host virtual address not available"),
+            Error::RemoteMemError(e) => write!(f, "{}", e),
         }
     }
 }
