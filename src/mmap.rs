@@ -177,6 +177,7 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
     /// ```
     fn write(&self, buf: &[u8], addr: MemoryRegionAddress) -> guest_memory::Result<usize> {
         let maddr = addr.raw_value() as usize;
+        log::trace!("write 0x{:x}", maddr);
         if maddr >= self.mapping.size() {
             return Err(guest_memory::Error::InvalidGuestAddress(GuestAddress(addr.0)));
         }
@@ -206,6 +207,7 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
     /// ```
     fn read(&self, buf: &mut [u8], addr: MemoryRegionAddress) -> guest_memory::Result<usize> {
         let maddr = addr.raw_value() as usize;
+        log::trace!("read 0x{:x}", maddr);
         if maddr >= self.mapping.size() {
             return Err(guest_memory::Error::InvalidGuestAddress(GuestAddress(addr.0)));
         }
@@ -322,6 +324,7 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
     where
         F: Read,
     {
+        log::warn!("read_exact_from");
         unimplemented!();
         let maddr = addr.raw_value() as usize;
         self.as_volatile_slice()
@@ -429,7 +432,9 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
         order: Ordering,
     ) -> guest_memory::Result<()> {
         let maddr = addr.raw_value() as usize;
+        log::trace!("store 0x{:x}", maddr);
         if maddr >= self.mapping.size() {
+            log::warn!("out of bounds");
             return Err(guest_memory::Error::InvalidGuestAddress(GuestAddress(addr.0)));
         }
         let ptr = self.mapping.as_ptr() as usize + maddr;
@@ -446,7 +451,9 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
         order: Ordering,
     ) -> guest_memory::Result<T> {
         let maddr = addr.raw_value() as usize;
+        log::trace!("load 0x{:x}", maddr);
         if maddr >= self.mapping.size() {
+            log::warn!("out of bounds");
             return Err(guest_memory::Error::InvalidGuestAddress(GuestAddress(addr.0)));
         }
         let ptr = self.mapping.as_ptr() as usize + maddr;
@@ -456,6 +463,7 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
     }
 }
 
+/// trying to prevent direct memory accesses
 impl GuestMemoryRegion for GuestRegionMmap {
     fn len(&self) -> GuestUsize {
         self.mapping.len() as GuestUsize
@@ -470,11 +478,13 @@ impl GuestMemoryRegion for GuestRegionMmap {
     }
 
     unsafe fn as_slice(&self) -> Option<&[u8]> {
-        Some(self.mapping.as_slice())
+        //Some(self.mapping.as_slice())
+        None
     }
 
     unsafe fn as_mut_slice(&self) -> Option<&mut [u8]> {
-        Some(self.mapping.as_mut_slice())
+        //Some(self.mapping.as_mut_slice())
+        None
     }
 
     fn get_host_address(&self, addr: MemoryRegionAddress) -> guest_memory::Result<*mut u8> {
@@ -490,6 +500,8 @@ impl GuestMemoryRegion for GuestRegionMmap {
         offset: MemoryRegionAddress,
         count: usize,
     ) -> guest_memory::Result<VolatileSlice> {
+        log::error!("hit unimplemented");
+        unimplemented!();
         let slice = self.mapping.get_slice(offset.raw_value() as usize, count)?;
         Ok(slice)
     }

@@ -3,6 +3,7 @@ use libc::{c_int, c_void};
 use nix::sys::uio::{process_vm_readv, process_vm_writev, IoVec, RemoteIoVec};
 use nix::unistd::Pid;
 use std::ffi::OsStr;
+use log::*;
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::mem::MaybeUninit;

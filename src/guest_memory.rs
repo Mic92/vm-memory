@@ -836,6 +836,7 @@ impl<T: GuestMemory> Bytes<GuestAddress> for T {
         self.try_access(count, addr, |offset, len, caddr, region| -> Result<usize> {
             // Check if something bad happened before doing unsafe things.
             assert!(offset <= count);
+            print_type_of(&region);
             if let Some(dst) = unsafe { region.as_mut_slice() } {
                 // This is safe cause `start` and `len` are within the `region`.
                 let start = caddr.raw_value() as usize;
@@ -869,6 +870,7 @@ impl<T: GuestMemory> Bytes<GuestAddress> for T {
     where
         F: Read,
     {
+        log::warn!("other read_exact_from");
         let res = self.read_from(addr, src, count)?;
         if res != count {
             return Err(Error::PartialBuffer {
@@ -1001,6 +1003,10 @@ impl<T: GuestMemory> Bytes<GuestAddress> for T {
             .ok_or(Error::InvalidGuestAddress(addr))
             .and_then(|(region, region_addr)| region.load(region_addr, order))
     }
+}
+
+fn print_type_of<T>(_: &T) {
+        log::error!("{}", std::any::type_name::<T>())
 }
 
 #[cfg(test)]
