@@ -56,6 +56,8 @@ pub mod mmap;
 #[cfg(feature = "backend-mmap")]
 pub use mmap::{Error, GuestMemoryMmap, GuestRegionMmap, MmapRegion};
 
+pub mod remote_mem;
+
 pub mod volatile_memory;
 pub use volatile_memory::{
     Error as VolatileMemoryError, Result as VolatileMemoryResult, VolatileArrayRef, VolatileMemory,

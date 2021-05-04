@@ -20,6 +20,8 @@ backend-atomic = ["arc-swap"]
 [dependencies]
 libc = "0.2.39"
 arc-swap = { version = "1.0.0", optional = true }
+nix = "0.26.*"
+log = "*"
 
 [target.'cfg(windows)'.dependencies.winapi]
 version = "0.3"

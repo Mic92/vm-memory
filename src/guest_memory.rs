@@ -54,6 +54,7 @@ use crate::address::{Address, AddressValue};
 use crate::bitmap::{Bitmap, BS, MS};
 use crate::bytes::{AtomicAccess, Bytes};
 use crate::volatile_memory::{self, VolatileSlice};
+use crate::remote_mem;
 
 static MAX_ACCESS_CHUNK: usize = 4096;
 
@@ -71,6 +72,8 @@ pub enum Error {
     InvalidBackendAddress,
     /// Host virtual address not available.
     HostAddressNotAvailable,
+    /// Memory of remote process not accessible.
+    RemoteMemError(remote_mem::Error),
 }
 
 impl From<volatile_memory::Error> for Error {
@@ -115,6 +118,7 @@ impl Display for Error {
             ),
             Error::InvalidBackendAddress => write!(f, "invalid backend address"),
             Error::HostAddressNotAvailable => write!(f, "host virtual address not available"),
+            Error::RemoteMemError(e) => write!(f, "memory of remote process not accessible: {}", e),
         }
     }
 }
@@ -877,6 +881,7 @@ impl<T: GuestMemory + ?Sized> Bytes<GuestAddress> for T {
     where
         F: Read,
     {
+        log::trace!("read_exact_from (GuestMemory/Bytes)");
         let res = self.read_from(addr, src, count)?;
         if res != count {
             return Err(Error::PartialBuffer {
