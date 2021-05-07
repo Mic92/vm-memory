@@ -12,6 +12,8 @@
 //!
 //! This implementation is mmap-ing the memory of the guest into the current process.
 
+use libc::pid_t;
+use nix::unistd::Pid;
 use std::borrow::Borrow;
 use std::error;
 use std::fmt;
@@ -20,18 +22,16 @@ use std::ops::Deref;
 use std::result;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use libc::pid_t;
-use nix::unistd::Pid;
 
 use crate::address::Address;
 use crate::guest_memory::{
     self, FileOffset, GuestAddress, GuestMemory, GuestMemoryIterator, GuestMemoryRegion,
     GuestUsize, MemoryRegionAddress,
 };
+use crate::remote_mem::{self, process_read_bytes, process_write_bytes};
+use crate::remote_mem::{process_read, process_write};
 use crate::volatile_memory::{VolatileMemory, VolatileSlice};
 use crate::{AtomicAccess, Bytes};
-use crate::remote_mem::{process_read_bytes, process_write_bytes};
-use crate::remote_mem::{process_read, process_write};
 
 #[cfg(unix)]
 pub use crate::mmap_unix::{Error as MmapRegionError, MmapRegion};
@@ -137,7 +137,11 @@ pub struct GuestRegionMmap {
 
 impl GuestRegionMmap {
     /// Create a new memory-mapped memory region for the guest's physical memory.
-    pub fn new(pid: pid_t, mapping: MmapRegion, guest_base: GuestAddress) -> result::Result<Self, Error> {
+    pub fn new(
+        pid: pid_t,
+        mapping: MmapRegion,
+        guest_base: GuestAddress,
+    ) -> result::Result<Self, Error> {
         if guest_base.0.checked_add(mapping.len() as u64).is_none() {
             return Err(Error::InvalidGuestRegion);
         }
@@ -179,10 +183,13 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
         let maddr = addr.raw_value() as usize;
         log::trace!("write 0x{:x}", maddr);
         if maddr >= self.mapping.size() {
-            return Err(guest_memory::Error::InvalidGuestAddress(GuestAddress(addr.0)));
+            return Err(guest_memory::Error::InvalidGuestAddress(GuestAddress(
+                addr.0,
+            )));
         }
         let ptr = self.mapping.as_ptr() as usize + maddr;
-        process_write_bytes(Pid::from_raw(self.pid), ptr as *mut libc::c_void, buf).map_err(guest_memory::Error::RemoteMemError)
+        process_write_bytes(Pid::from_raw(self.pid), ptr as *mut libc::c_void, buf)
+            .map_err(guest_memory::Error::RemoteMemError)
         // self.as_volatile_slice()
         //     .unwrap()
         //     .write(buf, maddr)
@@ -209,10 +216,13 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
         let maddr = addr.raw_value() as usize;
         log::trace!("read 0x{:x}", maddr);
         if maddr >= self.mapping.size() {
-            return Err(guest_memory::Error::InvalidGuestAddress(GuestAddress(addr.0)));
+            return Err(guest_memory::Error::InvalidGuestAddress(GuestAddress(
+                addr.0,
+            )));
         }
         let ptr = self.mapping.as_ptr() as usize + maddr;
-        process_read_bytes(Pid::from_raw(self.pid), buf, ptr as *const libc::c_void).map_err(guest_memory::Error::RemoteMemError)
+        process_read_bytes(Pid::from_raw(self.pid), buf, ptr as *const libc::c_void)
+            .map_err(guest_memory::Error::RemoteMemError)
         // self.as_volatile_slice()
         //     .unwrap()
         //     .read(buf, maddr)
@@ -221,7 +231,14 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
 
     fn write_slice(&self, buf: &[u8], addr: MemoryRegionAddress) -> guest_memory::Result<()> {
         let written = self.write(buf, addr)?;
-        // TODO check written
+        if written != buf.len() {
+            return Err(guest_memory::Error::RemoteMemError(
+                remote_mem::Error::ByteCount {
+                    is: written,
+                    should: buf.len(),
+                },
+            ));
+        }
         // let maddr = addr.raw_value() as usize;
         // self.as_volatile_slice()
         //     .unwrap()
@@ -232,11 +249,19 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
 
     fn read_slice(&self, buf: &mut [u8], addr: MemoryRegionAddress) -> guest_memory::Result<()> {
         let read = self.read(buf, addr)?;
+        if read != buf.len() {
+            return Err(guest_memory::Error::RemoteMemError(
+                remote_mem::Error::ByteCount {
+                    is: read,
+                    should: buf.len(),
+                },
+            ));
+        }
         //let maddr = addr.raw_value() as usize;
         //self.as_volatile_slice()
-            //.unwrap()
-            //.read_slice(buf, maddr)
-            //.map_err(Into::into)
+        //.unwrap()
+        //.read_slice(buf, maddr)
+        //.map_err(Into::into)
         Ok(())
     }
 
@@ -324,7 +349,6 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
     where
         F: Read,
     {
-        log::warn!("read_exact_from");
         unimplemented!();
         let maddr = addr.raw_value() as usize;
         self.as_volatile_slice()
@@ -435,10 +459,13 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
         log::trace!("store 0x{:x}", maddr);
         if maddr >= self.mapping.size() {
             log::warn!("out of bounds");
-            return Err(guest_memory::Error::InvalidGuestAddress(GuestAddress(addr.0)));
+            return Err(guest_memory::Error::InvalidGuestAddress(GuestAddress(
+                addr.0,
+            )));
         }
         let ptr = self.mapping.as_ptr() as usize + maddr;
-        process_write(Pid::from_raw(self.pid), ptr as *mut libc::c_void, &val).map_err(guest_memory::Error::RemoteMemError)
+        process_write(Pid::from_raw(self.pid), ptr as *mut libc::c_void, &val)
+            .map_err(guest_memory::Error::RemoteMemError)
         // self.as_volatile_slice().and_then(|s| {
         //     s.store(val, addr.raw_value() as usize, order)
         //         .map_err(Into::into)
@@ -454,16 +481,19 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
         log::trace!("load 0x{:x}", maddr);
         if maddr >= self.mapping.size() {
             log::warn!("out of bounds");
-            return Err(guest_memory::Error::InvalidGuestAddress(GuestAddress(addr.0)));
+            return Err(guest_memory::Error::InvalidGuestAddress(GuestAddress(
+                addr.0,
+            )));
         }
         let ptr = self.mapping.as_ptr() as usize + maddr;
-        process_read(Pid::from_raw(self.pid), ptr as *const libc::c_void).map_err(guest_memory::Error::RemoteMemError)
+        process_read(Pid::from_raw(self.pid), ptr as *const libc::c_void)
+            .map_err(guest_memory::Error::RemoteMemError)
         //self.as_volatile_slice()
-            //.and_then(|s| s.load(addr.raw_value() as usize, order).map_err(Into::into))
+        //.and_then(|s| s.load(addr.raw_value() as usize, order).map_err(Into::into))
     }
 }
 
-/// trying to prevent direct memory accesses
+/// A Mmap which has no support for direct memory accesses.
 impl GuestMemoryRegion for GuestRegionMmap {
     fn len(&self) -> GuestUsize {
         self.mapping.len() as GuestUsize
@@ -500,7 +530,6 @@ impl GuestMemoryRegion for GuestRegionMmap {
         offset: MemoryRegionAddress,
         count: usize,
     ) -> guest_memory::Result<VolatileSlice> {
-        log::error!("hit unimplemented");
         unimplemented!();
         let slice = self.mapping.get_slice(offset.raw_value() as usize, count)?;
         Ok(slice)
@@ -536,7 +565,10 @@ impl GuestMemoryMmap {
     /// Creates a container and allocates anonymous memory for guest memory regions.
     ///
     /// Valid memory regions are specified as a slice of (Address, Size) tuples sorted by Address.
-    pub fn from_ranges(pid: pid_t, ranges: &[(GuestAddress, usize)]) -> result::Result<Self, Error> {
+    pub fn from_ranges(
+        pid: pid_t,
+        ranges: &[(GuestAddress, usize)],
+    ) -> result::Result<Self, Error> {
         Self::from_ranges_with_files(pid, ranges.iter().map(|r| (r.0, r.1, None)))
     }
 
@@ -576,7 +608,10 @@ impl GuestMemoryMmap {
     /// * `regions` - The vector of regions.
     ///               The regions shouldn't overlap and they should be sorted
     ///               by the starting address.
-    pub fn from_regions(pid: pid_t, mut regions: Vec<GuestRegionMmap>) -> result::Result<Self, Error> {
+    pub fn from_regions(
+        pid: pid_t,
+        mut regions: Vec<GuestRegionMmap>,
+    ) -> result::Result<Self, Error> {
         Self::from_arc_regions(pid, regions.drain(..).map(Arc::new).collect())
     }
 
@@ -592,7 +627,10 @@ impl GuestMemoryMmap {
     /// * `regions` - The vector of `Arc` regions.
     ///               The regions shouldn't overlap and they should be sorted
     ///               by the starting address.
-    pub fn from_arc_regions(pid: pid_t, regions: Vec<Arc<GuestRegionMmap>>) -> result::Result<Self, Error> {
+    pub fn from_arc_regions(
+        pid: pid_t,
+        regions: Vec<Arc<GuestRegionMmap>>,
+    ) -> result::Result<Self, Error> {
         if regions.is_empty() {
             return Err(Error::NoMemoryRegion);
         }
@@ -643,7 +681,13 @@ impl GuestMemoryMmap {
             if self.regions.get(region_index).unwrap().size() as GuestUsize == size {
                 let mut regions = self.regions.clone();
                 let region = regions.remove(region_index);
-                return Ok((Self { pid: self.pid, regions }, region));
+                return Ok((
+                    Self {
+                        pid: self.pid,
+                        regions,
+                    },
+                    region,
+                ));
             }
         }
 

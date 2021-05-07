@@ -44,8 +44,8 @@ use std::sync::Arc;
 
 use crate::address::{Address, AddressValue};
 use crate::bytes::{AtomicAccess, Bytes};
-use crate::volatile_memory;
 use crate::remote_mem;
+use crate::volatile_memory;
 
 static MAX_ACCESS_CHUNK: usize = 4096;
 
@@ -63,7 +63,7 @@ pub enum Error {
     InvalidBackendAddress,
     /// Host virtual address not available.
     HostAddressNotAvailable,
-    /// was weiss ich
+    /// Memory of remote process not accessible.
     RemoteMemError(remote_mem::Error),
 }
 
@@ -109,7 +109,7 @@ impl Display for Error {
             ),
             Error::InvalidBackendAddress => write!(f, "invalid backend address"),
             Error::HostAddressNotAvailable => write!(f, "host virtual address not available"),
-            Error::RemoteMemError(e) => write!(f, "{}", e),
+            Error::RemoteMemError(e) => write!(f, "memory of remote process not accessible: {}", e),
         }
     }
 }
@@ -836,7 +836,6 @@ impl<T: GuestMemory> Bytes<GuestAddress> for T {
         self.try_access(count, addr, |offset, len, caddr, region| -> Result<usize> {
             // Check if something bad happened before doing unsafe things.
             assert!(offset <= count);
-            print_type_of(&region);
             if let Some(dst) = unsafe { region.as_mut_slice() } {
                 // This is safe cause `start` and `len` are within the `region`.
                 let start = caddr.raw_value() as usize;
@@ -870,7 +869,7 @@ impl<T: GuestMemory> Bytes<GuestAddress> for T {
     where
         F: Read,
     {
-        log::warn!("other read_exact_from");
+        log::trace!("read_exact_from (GuestMemory/Bytes)");
         let res = self.read_from(addr, src, count)?;
         if res != count {
             return Err(Error::PartialBuffer {
@@ -1003,10 +1002,6 @@ impl<T: GuestMemory> Bytes<GuestAddress> for T {
             .ok_or(Error::InvalidGuestAddress(addr))
             .and_then(|(region, region_addr)| region.load(region_addr, order))
     }
-}
-
-fn print_type_of<T>(_: &T) {
-        log::error!("{}", std::any::type_name::<T>())
 }
 
 #[cfg(test)]

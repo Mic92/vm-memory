@@ -54,7 +54,6 @@ pub mod mmap;
 #[cfg(feature = "backend-mmap")]
 pub use mmap::{Error, GuestMemoryMmap, GuestRegionMmap, MmapRegion};
 
-/// Who configured that i need doc for everything?
 pub mod remote_mem;
 
 pub mod volatile_memory;
