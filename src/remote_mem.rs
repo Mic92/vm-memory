@@ -73,6 +73,7 @@ pub fn process_read_bytes(pid: Pid, buf: &mut [u8], addr: *const c_void) -> Resu
 
     let f = process_vm_readv(pid, local_iovec.as_slice(), remote_iovec.as_slice())
         .map_err(Error::Rw)?;
+    std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
     Ok(f)
 }
 
@@ -103,5 +104,6 @@ pub fn process_write_bytes(pid: Pid, addr: *mut c_void, val: &[u8]) -> Result<us
 
     let f = process_vm_writev(pid, local_iovec.as_slice(), remote_iovec.as_slice())
         .map_err(Error::Rw)?;
+    std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
     Ok(f)
 }
