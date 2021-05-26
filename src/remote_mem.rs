@@ -12,6 +12,14 @@ use nix::unistd::Pid;
 use std::mem::size_of;
 use std::mem::MaybeUninit;
 
+/// We assume the platforms memcopy (used in process_vm_read/write) copies chunks of data aligned
+/// by <=ALG atomically. This is relevant for process_load/store.
+///
+/// The *rationale* is that all reasonable platforms rather introduce _one_ branch to check wether
+/// byte-wise memaccess can be replaced by the platforms native access width, rather than e.g.
+/// copying a u64 in a byte copy loop containing _eight_ conditionals. 
+const ALG: usize = 8;
+
 /// An Error Type.
 #[derive(Debug)]
 pub enum Error {
@@ -47,6 +55,36 @@ pub unsafe fn any_as_bytes<T: Sized>(p: &T) -> &[u8] {
 }
 
 /// read from a virtual addr of the hypervisor
+pub fn process_load<T: Sized + Copy>(pid: Pid, addr: *const c_void) -> Result<T, Error> {
+    let foo: T = process_read(pid, addr)?;
+    log::trace!("load::foo_read = {:?}", unsafe { any_as_bytes(&foo) }); // 0x0100
+
+    let len = size_of::<T>();
+    assert!(len <= ALG);
+
+    // TODO kind of safe, because we access at most 7 bytes (actually 6) more than we are allowed
+    // to lol
+    let offset = ALG - addr.align_offset(ALG); // alignment border <--offset--> addr <----> algn b.
+    log::trace!("load offset {}", offset);
+    let aligned = unsafe { addr.sub(offset) } as usize;
+    //let addr = addr as usize;
+    //let aligned = addr & (usize::MAX << 6); // 8byte aligned
+    assert!(addr as usize + len <= aligned + ALG); // value must not extend beyond this 8b aligned space
+
+    assert_eq!(size_of::<MaybeUninit::<T>>(), size_of::<T>());
+    let mut t_mem = MaybeUninit::<T>::uninit();
+    let t_slice = unsafe { std::slice::from_raw_parts_mut(t_mem.as_mut_ptr() as *mut u8, len) };
+    //let read = process_read_bytes(pid, t_slice, addr)?;
+    let data: [u8; ALG] = process_read(pid, aligned as *const c_void)?;
+    log::trace!("load::read {:?}", data); // 0
+    t_slice.copy_from_slice(&data[offset .. (offset+len)]);
+    log::trace!("load = {:?}", t_slice); // 0
+    let t: T = unsafe { t_mem.assume_init() };
+
+    Ok(t)
+}
+
+/// read from a virtual addr of the hypervisor
 pub fn process_read<T: Sized + Copy>(pid: Pid, addr: *const c_void) -> Result<T, Error> {
     let len = size_of::<T>();
     let mut t_mem = MaybeUninit::<T>::uninit();
@@ -75,6 +113,34 @@ pub fn process_read_bytes(pid: Pid, buf: &mut [u8], addr: *const c_void) -> Resu
         .map_err(Error::Rw)?;
     std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
     Ok(f)
+}
+
+/// write to a virtual addr of the hypervisor
+pub fn process_store<T: Sized + Copy>(pid: Pid, addr: *mut c_void, val: &T) -> Result<(), Error> {
+
+    let len = size_of::<T>();
+    assert!(len <= ALG); // Thats our limit. The hardware may support less.
+
+    // TODO kind of safe, because we access at most 7 bytes (actually 6) more than we are allowed
+    // to lol
+    let offset = addr.align_offset(ALG);
+    log::trace!("store offset {}", offset);
+    let aligned = unsafe { addr.add(offset) } as usize;
+    //let addr = addr as usize;
+    //let aligned = addr & (usize::MAX << 6); // 8byte aligned
+    //assert!(aligned + ALG >= addr + len); // value must not extend beyond this 8b aligned space
+
+    let mut data: [u8; ALG] = process_read(pid, aligned as *const c_void)?;
+    let val_b: &[u8] = unsafe { any_as_bytes(val) };
+    //let data_slice = &mut data[offset .. (offset+len)];
+    //data_slice.copy_from_slice(val_b);
+    data[offset .. (offset+len)].copy_from_slice(val_b);
+    process_write(pid, addr, &data)?;
+
+    // TODO are we the only vmsh writing? that will depend on who is calling operations on the
+    // queue. But vmsh owns the queue code so that should be fine. 
+
+    Ok(())
 }
 
 /// write to a virtual addr of the hypervisor
