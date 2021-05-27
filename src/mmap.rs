@@ -30,6 +30,7 @@ use crate::guest_memory::{
 };
 use crate::remote_mem::{self, process_read_bytes, process_write_bytes};
 use crate::remote_mem::{process_read, process_write};
+use crate::remote_mem::{process_load, process_store};
 use crate::volatile_memory::{VolatileMemory, VolatileSlice};
 use crate::{AtomicAccess, Bytes};
 
@@ -464,7 +465,7 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
             )));
         }
         let ptr = self.mapping.as_ptr() as usize + maddr;
-        process_write(Pid::from_raw(self.pid), ptr as *mut libc::c_void, &val)
+        process_store(Pid::from_raw(self.pid), ptr as *mut libc::c_void, &val)
             .map_err(guest_memory::Error::RemoteMemError)
         // self.as_volatile_slice().and_then(|s| {
         //     s.store(val, addr.raw_value() as usize, order)
@@ -486,8 +487,7 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
             )));
         }
         let ptr = self.mapping.as_ptr() as usize + maddr;
-        process_read(Pid::from_raw(self.pid), ptr as *const libc::c_void)
-            .map_err(guest_memory::Error::RemoteMemError)
+        process_load(Pid::from_raw(self.pid), ptr as *const libc::c_void).map_err(guest_memory::Error::RemoteMemError)
         //self.as_volatile_slice()
         //.and_then(|s| s.load(addr.raw_value() as usize, order).map_err(Into::into))
     }

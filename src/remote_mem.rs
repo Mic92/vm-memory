@@ -18,6 +18,22 @@ use std::mem::MaybeUninit;
 /// The *rationale* is that all reasonable platforms rather introduce _one_ branch to check wether
 /// byte-wise memaccess can be replaced by the platforms native access width, rather than e.g.
 /// copying a u64 in a byte copy loop containing _eight_ conditionals. 
+/// The process_vm_read linux impls i checked (arm64+x64) do use atomic chunks of 8B or 4B.
+/// 
+/// # Safety
+///
+/// In theory we often access bytes before and after the memory we own. This is in practice not an
+/// immediate issue because:
+///
+/// Memory before: In the current vmsh blkdev implementation only virtq_used.idx and .avail_event
+/// are accessed. Experiments show that this struct always begins aligned. Therefore we only access
+/// memory owned by us and never memory before the virtq_used struct (which might be unowned). As
+/// long as we have only one thread operating on this virtq, we are therefore safe. (in principle
+/// this should apply to all/most virtio-blk impls)
+///
+/// Memory after: As virtq_used is big (>=NR_QUEUES*8+4(+2)) and begins aligned, it is reasonable
+/// to assume that there has been added enough spacing to accomondate the 2 bytes out-of-bound
+/// access.
 const ALG: usize = 8;
 
 /// An Error Type.
@@ -117,25 +133,29 @@ pub fn process_read_bytes(pid: Pid, buf: &mut [u8], addr: *const c_void) -> Resu
 
 /// write to a virtual addr of the hypervisor
 pub fn process_store<T: Sized + Copy>(pid: Pid, addr: *mut c_void, val: &T) -> Result<(), Error> {
+    let foo: T = process_read(pid, addr)?;
+    log::trace!("store::foo_read = {:?}", unsafe { any_as_bytes(&foo) }); // 0x0100
 
     let len = size_of::<T>();
     assert!(len <= ALG); // Thats our limit. The hardware may support less.
 
     // TODO kind of safe, because we access at most 7 bytes (actually 6) more than we are allowed
     // to lol
-    let offset = addr.align_offset(ALG);
+    let offset = ALG - addr.align_offset(ALG); // alignment border <--offset--> addr <----> algn b.
     log::trace!("store offset {}", offset);
-    let aligned = unsafe { addr.add(offset) } as usize;
+    let aligned = unsafe { addr.sub(offset) } as usize;
     //let addr = addr as usize;
     //let aligned = addr & (usize::MAX << 6); // 8byte aligned
     //assert!(aligned + ALG >= addr + len); // value must not extend beyond this 8b aligned space
 
     let mut data: [u8; ALG] = process_read(pid, aligned as *const c_void)?;
+    log::trace!("store::read {:?}", data); // 0
     let val_b: &[u8] = unsafe { any_as_bytes(val) };
     //let data_slice = &mut data[offset .. (offset+len)];
     //data_slice.copy_from_slice(val_b);
     data[offset .. (offset+len)].copy_from_slice(val_b);
-    process_write(pid, addr, &data)?;
+    log::trace!("store({:?}) = {:?}", val_b, data); // 0
+    process_write(pid, aligned as *mut c_void, &data)?;
 
     // TODO are we the only vmsh writing? that will depend on who is calling operations on the
     // queue. But vmsh owns the queue code so that should be fine. 
