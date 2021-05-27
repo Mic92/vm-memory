@@ -29,7 +29,6 @@ use crate::guest_memory::{
     GuestUsize, MemoryRegionAddress,
 };
 use crate::remote_mem::{self, process_read_bytes, process_write_bytes};
-use crate::remote_mem::{process_read, process_write};
 use crate::remote_mem::{process_load, process_store};
 use crate::volatile_memory::{VolatileMemory, VolatileSlice};
 use crate::{AtomicAccess, Bytes};
