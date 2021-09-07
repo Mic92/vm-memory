@@ -80,7 +80,10 @@ pub fn process_load<T: Sized + Copy>(pid: Pid, addr: *const c_void) -> Result<T,
     let len = size_of::<T>();
     assert!(len <= ALG);
 
-    let offset = ALG - addr.align_offset(ALG); // alignment border <--offset--> addr <----> algn b.
+    let mut offset = ALG - addr.align_offset(ALG); // alignment border <--offset--> addr <----> algn b.
+    if offset == ALG {
+        offset = 0;
+    }
     log::trace!("load offset {}", offset);
     let aligned = unsafe { addr.sub(offset) } as usize;
     assert!(addr as usize + len <= aligned + ALG); // value must not extend beyond this 8b aligned space
@@ -137,7 +140,10 @@ pub fn process_store<T: Sized + Copy>(pid: Pid, addr: *mut c_void, val: &T) -> R
     let len = size_of::<T>();
     assert!(len <= ALG);
 
-    let offset = ALG - addr.align_offset(ALG); // alignment border <--offset--> addr <----> algn b.
+    let mut offset = ALG - addr.align_offset(ALG); // alignment border <--offset--> addr <----> algn b.
+    if offset == ALG {
+        offset = 0;
+    }
     log::trace!("store offset {}", offset);
     let aligned = unsafe { addr.sub(offset) } as usize;
     assert!(addr as usize + len <= aligned + ALG); // value must not extend beyond this 8b aligned space
