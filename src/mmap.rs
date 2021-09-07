@@ -456,7 +456,7 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
         order: Ordering,
     ) -> guest_memory::Result<()> {
         let maddr = addr.raw_value() as usize;
-        log::trace!("store 0x{:x}", maddr);
+        log::info!("store 0x{:x}", maddr);
         if maddr >= self.mapping.size() {
             log::warn!("out of bounds");
             return Err(guest_memory::Error::InvalidGuestAddress(GuestAddress(
@@ -478,7 +478,7 @@ impl Bytes<MemoryRegionAddress> for GuestRegionMmap {
         order: Ordering,
     ) -> guest_memory::Result<T> {
         let maddr = addr.raw_value() as usize;
-        log::trace!("load 0x{:x}", maddr);
+        log::info!("load 0x{:x}", maddr);
         if maddr >= self.mapping.size() {
             log::warn!("out of bounds");
             return Err(guest_memory::Error::InvalidGuestAddress(GuestAddress(

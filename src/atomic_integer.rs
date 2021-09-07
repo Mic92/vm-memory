@@ -31,10 +31,12 @@ macro_rules! impl_atomic_integer_ops {
             }
 
             fn load(&self, order: Ordering) -> Self::V {
+                unimplemented!();
                 self.load(order)
             }
 
             fn store(&self, val: Self::V, order: Ordering) {
+                unimplemented!();
                 self.store(val, order)
             }
         }

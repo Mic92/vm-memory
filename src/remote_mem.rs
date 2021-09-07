@@ -37,6 +37,17 @@ use std::mem::MaybeUninit;
 /// access caused by .avail_event accesses.
 const ALG: usize = 8;
 
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
+/// fuck
+pub static W_BYTES: AtomicU64 = AtomicU64::new(0);
+/// docs
+pub static W_COUNT: AtomicU64 = AtomicU64::new(0);
+/// fuck
+pub static R_BYTES: AtomicU64 = AtomicU64::new(0);
+/// docs
+pub static R_COUNT: AtomicU64 = AtomicU64::new(0);
+
 /// An Error Type.
 #[derive(Debug)]
 pub enum Error {
@@ -122,6 +133,9 @@ pub fn process_read_bytes(pid: Pid, buf: &mut [u8], addr: *const c_void) -> Resu
         len,
     }];
 
+    R_BYTES.fetch_add(len as u64, Ordering::Release);
+    R_COUNT.fetch_add(1, Ordering::Release);
+    std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
     let f = process_vm_readv(pid, local_iovec.as_slice(), remote_iovec.as_slice())
         .map_err(Error::Rw)?;
     std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
@@ -177,6 +191,9 @@ pub fn process_write_bytes(pid: Pid, addr: *mut c_void, val: &[u8]) -> Result<us
         len,
     }];
 
+    W_BYTES.fetch_add(len as u64, Ordering::Release);
+    W_COUNT.fetch_add(1, Ordering::Release);
+    std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
     let f = process_vm_writev(pid, local_iovec.as_slice(), remote_iovec.as_slice())
         .map_err(Error::Rw)?;
     std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
